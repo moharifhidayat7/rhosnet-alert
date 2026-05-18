@@ -1,0 +1,200 @@
+###############################################################################
+#  MikroTik RouterOS Scripts for Cloudflare Worker Alerts
+#
+#  SETUP:
+#  1. Replace WORKER_URL with your deployed Worker URL
+#  2. Replace SECRET_KEY with the same key set in Worker env
+#  3. Paste each script in: System > Scripts (or /system/script)
+#  4. Configure Netwatch and Scheduler as shown below
+###############################################################################
+
+# ─── GLOBAL VARIABLES (edit these) ───────────────────────────────────────────
+
+:local workerUrl "https://mikrotik-alert.YOUR-SUBDOMAIN.workers.dev"
+:local secretKey "YOUR_SECRET_KEY_HERE"
+
+# ===========================================================================
+# SCRIPT 1: alert-cpu-ram
+# Purpose : Runs on a schedule, sends alert if CPU or RAM is high
+# Schedule: Every 1 minute (see Scheduler config below)
+# ===========================================================================
+
+:local workerUrl "https://mikrotik-alert.YOUR-SUBDOMAIN.workers.dev"
+:local secretKey "YOUR_SECRET_KEY_HERE"
+:local cpuThreshold 80
+:local ramThreshold 85
+
+:local identity [/system identity get name]
+:local cpu [/system resource get cpu-load]
+
+:local totalMem [/system resource get total-memory]
+:local freeMem  [/system resource get free-memory]
+:local usedMem  ($totalMem - $freeMem)
+:local ram      (($usedMem * 100) / $totalMem)
+
+:if ($cpu >= $cpuThreshold || $ram >= $ramThreshold) do={
+  :local body "{\"type\":\"cpu_ram\",\"data\":{\"identity\":\"$identity\",\"cpu\":$cpu,\"ram\":$ram,\"threshold_cpu\":$cpuThreshold,\"threshold_ram\":$ramThreshold}}"
+  /tool fetch \
+    url=$workerUrl \
+    http-method=post \
+    http-header-field="Content-Type: application/json,X-Secret-Key: $secretKey" \
+    http-data=$body \
+    output=none \
+    as-value
+}
+
+# ===========================================================================
+# SCRIPT 2: alert-pppoe-connect
+# Purpose : Triggered when a PPPoE user connects
+# Trigger : /ppp profile on-up script
+# ===========================================================================
+#
+# In RouterOS, go to:
+#   /ppp profile set default on-up=alert-pppoe-connect
+#
+# The script receives built-in vars: $user, $local-address, $remote-address,
+# $caller-id automatically from PPPoE subsystem.
+
+:local workerUrl "https://mikrotik-alert.YOUR-SUBDOMAIN.workers.dev"
+:local secretKey "YOUR_SECRET_KEY_HERE"
+
+:local identity [/system identity get name]
+:local ip       $"remote-address"
+:local callerId $"caller-id"
+
+:local body "{\"type\":\"pppoe_connect\",\"data\":{\"identity\":\"$identity\",\"user\":\"$user\",\"ip\":\"$ip\",\"caller_id\":\"$callerId\"}}"
+
+/tool fetch \
+  url=$workerUrl \
+  http-method=post \
+  http-header-field="Content-Type: application/json,X-Secret-Key: $secretKey" \
+  http-data=$body \
+  output=none \
+  as-value
+
+# ===========================================================================
+# SCRIPT 3: alert-pppoe-disconnect
+# Purpose : Triggered when a PPPoE user disconnects
+# Trigger : /ppp profile on-down script
+# ===========================================================================
+#
+# In RouterOS, go to:
+#   /ppp profile set default on-down=alert-pppoe-disconnect
+
+:local workerUrl "https://mikrotik-alert.YOUR-SUBDOMAIN.workers.dev"
+:local secretKey "YOUR_SECRET_KEY_HERE"
+
+:local identity [/system identity get name]
+:local ip       $"remote-address"
+
+# Get session stats before they disappear
+:local bytesIn  0
+:local bytesOut 0
+:local uptime   "N/A"
+
+:foreach session in=[/ppp active find where name=$user] do={
+  :set bytesIn  [/ppp active get $session bytes-in]
+  :set bytesOut [/ppp active get $session bytes-out]
+  :set uptime   [/ppp active get $session uptime]
+}
+
+:local body "{\"type\":\"pppoe_disconnect\",\"data\":{\"identity\":\"$identity\",\"user\":\"$user\",\"ip\":\"$ip\",\"uptime\":\"$uptime\",\"bytes_in\":$bytesIn,\"bytes_out\":$bytesOut}}"
+
+/tool fetch \
+  url=$workerUrl \
+  http-method=post \
+  http-header-field="Content-Type: application/json,X-Secret-Key: $secretKey" \
+  http-data=$body \
+  output=none \
+  as-value
+
+# ===========================================================================
+# SCRIPT 4: alert-interface-down
+# Purpose : Triggered by Netwatch when an interface target goes DOWN
+# Trigger : Netwatch down-script
+# ===========================================================================
+#
+# For each interface you want to monitor, add a Netwatch entry:
+#   /tool netwatch add host=<gateway-or-IP> \
+#     down-script=alert-interface-down \
+#     up-script=alert-interface-up \
+#     interval=30s
+#
+# Set :local ifaceName to match the interface this Netwatch entry monitors.
+
+:local workerUrl "https://mikrotik-alert.YOUR-SUBDOMAIN.workers.dev"
+:local secretKey "YOUR_SECRET_KEY_HERE"
+
+:local identity  [/system identity get name]
+:local ifaceName "ether1"   # <-- change to your interface name
+
+:local body "{\"type\":\"interface_down\",\"data\":{\"identity\":\"$identity\",\"interface\":\"$ifaceName\"}}"
+
+/tool fetch \
+  url=$workerUrl \
+  http-method=post \
+  http-header-field="Content-Type: application/json,X-Secret-Key: $secretKey" \
+  http-data=$body \
+  output=none \
+  as-value
+
+# ===========================================================================
+# SCRIPT 5: alert-interface-up
+# Purpose : Triggered by Netwatch when an interface target comes back UP
+# Trigger : Netwatch up-script
+# ===========================================================================
+
+:local workerUrl "https://mikrotik-alert.YOUR-SUBDOMAIN.workers.dev"
+:local secretKey "YOUR_SECRET_KEY_HERE"
+
+:local identity  [/system identity get name]
+:local ifaceName "ether1"   # <-- change to your interface name
+
+:local body "{\"type\":\"interface_up\",\"data\":{\"identity\":\"$identity\",\"interface\":\"$ifaceName\"}}"
+
+/tool fetch \
+  url=$workerUrl \
+  http-method=post \
+  http-header-field="Content-Type: application/json,X-Secret-Key: $secretKey" \
+  http-data=$body \
+  output=none \
+  as-value
+
+
+###############################################################################
+#  ROUTER CONFIGURATION COMMANDS
+#  Run these in RouterOS terminal to wire everything up
+###############################################################################
+
+# --- 1. Add scripts (paste each script body into System > Scripts) ---
+# Name them exactly: alert-cpu-ram, alert-pppoe-connect,
+#                    alert-pppoe-disconnect, alert-interface-down,
+#                    alert-interface-up
+
+# --- 2. CPU/RAM: Schedule to run every minute ---
+/system scheduler add \
+  name=check-cpu-ram \
+  interval=1m \
+  on-event=alert-cpu-ram \
+  start-time=startup
+
+# --- 3. PPPoE: Attach to PPP profile ---
+/ppp profile set default \
+  on-up=alert-pppoe-connect \
+  on-down=alert-pppoe-disconnect
+
+# --- 4. Interface monitoring via Netwatch ---
+# Add one entry per interface/WAN link you want to monitor.
+# Use the gateway IP or a reliable host reachable through that interface.
+
+# Example: Monitor WAN (ether1) by pinging the gateway
+/tool netwatch add \
+  host=1.1.1.1 \
+  interface=ether1 \
+  interval=30s \
+  timeout=5s \
+  down-script=alert-interface-down \
+  up-script=alert-interface-up
+
+# Add more interfaces as needed:
+# /tool netwatch add host=10.0.0.1 interface=ether2 interval=30s ...
