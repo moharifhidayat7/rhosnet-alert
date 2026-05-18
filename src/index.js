@@ -146,6 +146,8 @@ async function sendTelegram(env, text) {
     .map((id) => id.trim())
     .filter(Boolean);
 
+  console.log("DEBUG", chatIds);
+
   await Promise.all(
     chatIds.map(async (chat_id) => {
       const res = await fetch(url, {
@@ -157,7 +159,7 @@ async function sendTelegram(env, text) {
         const err = await res.text();
         throw new Error(`Telegram API error (chat ${chat_id}): ${err}`);
       }
-    })
+    }),
   );
 }
 
