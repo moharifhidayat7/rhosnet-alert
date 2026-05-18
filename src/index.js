@@ -19,7 +19,6 @@ export default {
 
     // Validate secret key from header
     const secret = request.headers.get("X-Secret-Key");
-    console.log("SECRET", secret);
     if (!secret || secret !== env.SECRET_KEY) {
       return new Response("Unauthorized", { status: 401 });
     }
