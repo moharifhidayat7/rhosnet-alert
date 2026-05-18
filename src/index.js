@@ -6,7 +6,7 @@
  *
  * Environment variables (set in wrangler.toml or CF dashboard):
  *   TELEGRAM_BOT_TOKEN  - from @BotFather
- *   TELEGRAM_CHAT_ID    - target chat/group ID
+ *   TELEGRAM_CHAT_IDS   - comma-separated list of target chat/group IDs
  *   SECRET_KEY          - shared secret to authenticate MikroTik requests
  */
 
@@ -141,30 +141,43 @@ function formatInterfaceUp({ identity, interface: iface }) {
 
 async function sendTelegram(env, text) {
   const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      chat_id: env.TELEGRAM_CHAT_ID,
-      text,
-      parse_mode: "Markdown",
-    }),
-  });
+  const chatIds = (env.TELEGRAM_CHAT_IDS ?? "")
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
 
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(`Telegram API error: ${err}`);
-  }
+  await Promise.all(
+    chatIds.map(async (chat_id) => {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id, text, parse_mode: "Markdown" }),
+      });
+      if (!res.ok) {
+        const err = await res.text();
+        throw new Error(`Telegram API error (chat ${chat_id}): ${err}`);
+      }
+    })
+  );
 }
 
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 function esc(str) {
-  return String(str ?? "").replace(/[_*[\]()~`>#+=|{}.!-]/g, "\\$&");
+  return String(str ?? "").replace(/[_*`[]/g, "\\$&");
 }
 
 function timestamp() {
-  return new Date().toUTCString();
+  return new Date().toLocaleString("id-ID", {
+    timeZone: "Asia/Jakarta",
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
 }
 
 function formatBytes(bytes) {
