@@ -13,57 +13,58 @@
 export default {
   async fetch(request, env) {
     // Only accept POST
-    if (request.method !== 'POST') {
-      return new Response('Method Not Allowed', { status: 405 });
+    if (request.method !== "POST") {
+      return new Response("Method Not Allowed", { status: 405 });
     }
 
     // Validate secret key from header
-    const secret = request.headers.get('X-Secret-Key');
+    const secret = request.headers.get("X-Secret-Key");
+    console.log("SECRET", secret);
     if (!secret || secret !== env.SECRET_KEY) {
-      return new Response('Unauthorized', { status: 401 });
+      return new Response("Unauthorized", { status: 401 });
     }
 
     let body;
     try {
       body = await request.json();
     } catch {
-      return new Response('Invalid JSON', { status: 400 });
+      return new Response("Invalid JSON", { status: 400 });
     }
 
     const { type, data } = body;
 
     if (!type || !data) {
-      return new Response('Missing type or data', { status: 400 });
+      return new Response("Missing type or data", { status: 400 });
     }
 
     let message;
 
     switch (type) {
-      case 'cpu_ram':
+      case "cpu_ram":
         message = formatCpuRam(data);
         break;
-      case 'pppoe_connect':
+      case "pppoe_connect":
         message = formatPPPoEConnect(data);
         break;
-      case 'pppoe_disconnect':
+      case "pppoe_disconnect":
         message = formatPPPoEDisconnect(data);
         break;
-      case 'interface_up':
+      case "interface_up":
         message = formatInterfaceUp(data);
         break;
-      case 'interface_down':
+      case "interface_down":
         message = formatInterfaceDown(data);
         break;
       default:
-        return new Response('Unknown type', { status: 400 });
+        return new Response("Unknown type", { status: 400 });
     }
 
     try {
       await sendTelegram(env, message);
-      return new Response('OK', { status: 200 });
+      return new Response("OK", { status: 200 });
     } catch (err) {
-      console.error('Telegram error:', err);
-      return new Response('Telegram send failed', { status: 500 });
+      console.error("Telegram error:", err);
+      return new Response("Telegram send failed", { status: 500 });
     }
   },
 };
@@ -71,7 +72,7 @@ export default {
 // ─── Message Formatters ───────────────────────────────────────────────────────
 
 function formatCpuRam({ identity, cpu, ram, threshold_cpu, threshold_ram }) {
-  const lines = [`⚠️ *Resource Alert — ${esc(identity)}*`, ''];
+  const lines = [`⚠️ *Resource Alert — ${esc(identity)}*`, ""];
 
   if (cpu !== undefined && cpu >= (threshold_cpu ?? 80)) {
     lines.push(`🔴 *CPU:* ${cpu}% (threshold: ${threshold_cpu ?? 80}%)`);
@@ -80,54 +81,61 @@ function formatCpuRam({ identity, cpu, ram, threshold_cpu, threshold_ram }) {
     lines.push(`🔴 *RAM:* ${ram}% (threshold: ${threshold_ram ?? 85}%)`);
   }
 
-  lines.push('', `🕐 ${timestamp()}`);
-  return lines.join('\n');
+  lines.push("", `🕐 ${timestamp()}`);
+  return lines.join("\n");
 }
 
 function formatPPPoEConnect({ identity, user, ip, caller_id }) {
   return [
     `🟢 *PPPoE Connected — ${esc(identity)}*`,
-    '',
+    "",
     `👤 User: \`${esc(user)}\``,
-    `🌐 IP: \`${ip ?? 'N/A'}\``,
-    `📍 Caller ID: \`${caller_id ?? 'N/A'}\``,
-    '',
+    `🌐 IP: \`${ip ?? "N/A"}\``,
+    `📍 Caller ID: \`${caller_id ?? "N/A"}\``,
+    "",
     `🕐 ${timestamp()}`,
-  ].join('\n');
+  ].join("\n");
 }
 
-function formatPPPoEDisconnect({ identity, user, ip, uptime, bytes_in, bytes_out }) {
+function formatPPPoEDisconnect({
+  identity,
+  user,
+  ip,
+  uptime,
+  bytes_in,
+  bytes_out,
+}) {
   return [
     `🔴 *PPPoE Disconnected — ${esc(identity)}*`,
-    '',
+    "",
     `👤 User: \`${esc(user)}\``,
-    `🌐 Last IP: \`${ip ?? 'N/A'}\``,
-    `⏱️ Session uptime: ${uptime ?? 'N/A'}`,
+    `🌐 Last IP: \`${ip ?? "N/A"}\``,
+    `⏱️ Session uptime: ${uptime ?? "N/A"}`,
     `⬇️ Downloaded: ${formatBytes(bytes_in)}`,
     `⬆️ Uploaded: ${formatBytes(bytes_out)}`,
-    '',
+    "",
     `🕐 ${timestamp()}`,
-  ].join('\n');
+  ].join("\n");
 }
 
 function formatInterfaceDown({ identity, interface: iface }) {
   return [
     `🔴 *Interface DOWN — ${esc(identity)}*`,
-    '',
+    "",
     `🔌 \`${esc(iface)}\` is *DOWN*`,
-    '',
+    "",
     `🕐 ${timestamp()}`,
-  ].join('\n');
+  ].join("\n");
 }
 
 function formatInterfaceUp({ identity, interface: iface }) {
   return [
     `🟢 *Interface UP — ${esc(identity)}*`,
-    '',
+    "",
     `🔌 \`${esc(iface)}\` is back *UP*`,
-    '',
+    "",
     `🕐 ${timestamp()}`,
-  ].join('\n');
+  ].join("\n");
 }
 
 // ─── Telegram Sender ──────────────────────────────────────────────────────────
@@ -135,12 +143,12 @@ function formatInterfaceUp({ identity, interface: iface }) {
 async function sendTelegram(env, text) {
   const url = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`;
   const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       chat_id: env.TELEGRAM_CHAT_ID,
       text,
-      parse_mode: 'Markdown',
+      parse_mode: "Markdown",
     }),
   });
 
@@ -153,7 +161,7 @@ async function sendTelegram(env, text) {
 // ─── Utilities ────────────────────────────────────────────────────────────────
 
 function esc(str) {
-  return String(str ?? '').replace(/[_*[\]()~`>#+=|{}.!-]/g, '\\$&');
+  return String(str ?? "").replace(/[_*[\]()~`>#+=|{}.!-]/g, "\\$&");
 }
 
 function timestamp() {
